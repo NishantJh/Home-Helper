@@ -1,7 +1,7 @@
 import argparse
 from datetime import date
 
-from . import camera, register, watch, web
+from . import camera, faces, register, watch, web
 from .db import open_db
 
 
@@ -32,12 +32,22 @@ def main(argv=None):
     c.add_argument("--entity", default="camera.doorcam_main")
     c.add_argument("--out", default="snapshot.jpg")
 
+    f = sub.add_parser("train-faces", help="build a face-matching model from enrollment photos")
+    f.add_argument("--faces-dir", default="faces", help="one subfolder of photos per maid")
+    f.add_argument("--model", default="faces.xml")
+    f.add_argument("--labels", default="faces_labels.json")
+
     v = sub.add_parser("watch", help="save a snapshot whenever a motion sensor reports a person")
     v.add_argument("--motion-entity", default="binary_sensor.doorcam_smart_motion_human")
     v.add_argument("--camera-entity", default="camera.doorcam_main")
-    v.add_argument("--maid", help="mark this maid present (source=camera) on every motion event")
+    v.add_argument("--maid", help="single-maid mode: mark this maid present on every motion event "
+                                  "(ignored once --faces-model is given)")
     v.add_argument("--out-dir", default="snapshots")
     v.add_argument("--poll-seconds", type=int, default=3)
+    v.add_argument("--cooldown-seconds", type=int, default=90)
+    v.add_argument("--faces-model", help="trained model from train-faces, enables auto-recognition")
+    v.add_argument("--faces-labels", help="labels file from train-faces")
+    v.add_argument("--confidence-threshold", type=float, default=70)
 
     args = p.parse_args(argv)
     if args.cmd == "serve":
@@ -47,13 +57,23 @@ def main(argv=None):
         path = camera.save_snapshot(args.entity, args.out)
         print(f"saved {path}")
         return
+    if args.cmd == "train-faces":
+        result = faces.train(args.faces_dir, args.model, args.labels)
+        print(f"trained on {result['trained']} photo(s) for {result['people']} maid(s)")
+        if result["skipped"]:
+            print(f"no face found, skipped: {', '.join(result['skipped'])}")
+        return
     if args.cmd == "watch":
         print(f"watching {args.motion_entity}, polling every {args.poll_seconds}s (Ctrl+C to stop)")
-        for path in watch.watch_motion(
+        for path, recognized in watch.watch_motion(
             args.motion_entity, args.camera_entity, db_path=args.db, maid=args.maid,
             out_dir=args.out_dir, poll_seconds=args.poll_seconds,
+            cooldown_seconds=args.cooldown_seconds,
+            faces_model=args.faces_model, faces_labels=args.faces_labels,
+            confidence_threshold=args.confidence_threshold,
         ):
-            print(f"motion detected, saved {path}")
+            who = recognized or ("unrecognized" if args.faces_model else "saved")
+            print(f"motion detected, {who}: {path}")
         return
     with open_db(args.db) as conn:
         if args.cmd == "add-maid":

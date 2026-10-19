@@ -1,0 +1,5 @@
+# Only needed for face recognition (attendance/faces.py, the "watch" and
+# "train-faces" commands). Everything else in this package is Python
+# standard library only.
+opencv-contrib-python-headless>=4.9
+numpy
