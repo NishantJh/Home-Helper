@@ -1,0 +1,95 @@
+"""Ingest server on the Pi. Bind it to the Tailscale/LAN address only.
+
+POST /ingest  {"sender": "...", "text": "..."}  -> {"status": "accepted"|"rejected"}
+POST /query   {"transcript": "..."}             -> {"language": "...", "speech": "..."}
+GET  /health  -> {"ok": true, "rejected": N}
+
+The message text is classified and dropped; only company, label, code and time
+are kept (in memory, 30 minutes). Request bodies are never logged.
+"""
+import hmac
+import json
+import os
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from .classify import classify
+from .notify import forward
+from .store import OtpStore
+from .voice import answer
+
+MAX_BODY = 4096
+
+
+def make_handler(store, token, config, secrets, send=forward):
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):  # no access log: it could carry content
+            pass
+
+        def _json(self, code, obj):
+            body = json.dumps(obj, ensure_ascii=False).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _authorised(self):
+            given = self.headers.get("Authorization", "")
+            return hmac.compare_digest(given, f"Bearer {token}")
+
+        def _body(self):
+            try:
+                n = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                return None
+            if n <= 0 or n > MAX_BODY:
+                return None
+            try:
+                data = json.loads(self.rfile.read(n))
+            except ValueError:
+                return None
+            return data if isinstance(data, dict) else None
+
+        def do_GET(self):
+            if self.path == "/health" and self._authorised():
+                return self._json(200, {"ok": True, "rejected": store.rejected})
+            self._json(404, {})
+
+        def do_POST(self):
+            if not self._authorised():
+                return self._json(401, {})
+            data = self._body()
+            if data is None:
+                return self._json(400, {})
+            if self.path == "/ingest":
+                otp = classify(str(data.get("sender", "")), str(data.get("text", "")))
+                if otp is None:
+                    store.reject()
+                    return self._json(200, {"status": "rejected"})
+                entry = store.add(otp)
+                send(entry, config, secrets)
+                return self._json(200, {"status": "accepted"})
+            if self.path == "/query":
+                lang, speech = answer(store, str(data.get("transcript", "")))
+                return self._json(200, {"language": lang, "speech": speech})
+            self._json(404, {})
+
+    return Handler
+
+
+def main(argv=None):
+    config_path = os.environ.get("OTP_RELAY_CONFIG", "otp_relay.config.json")
+    with open(config_path, encoding="utf-8") as f:
+        config = json.load(f)
+    token = os.environ["OTP_RELAY_TOKEN"]
+    secrets = {k: os.environ[k] for k in ("TELEGRAM_BOT_TOKEN", "WHATSAPP_TOKEN") if k in os.environ}
+    host = config.get("bind", "127.0.0.1")
+    port = int(config.get("port", 8765))
+    server = ThreadingHTTPServer((host, port), make_handler(OtpStore(), token, config, secrets))
+    print(f"otp_relay listening on {host}:{port}", file=sys.stderr)
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()
