@@ -1,2 +1,9 @@
 __pycache__/
 *.db
+# Attendance: door snapshots and face-recognition data are personal/
+# biometric data and never belong in the repo (audit S3).
+attendance/snapshots/
+snapshots/
+faces/
+faces*.xml
+faces*.json

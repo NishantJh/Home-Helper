@@ -3,7 +3,7 @@ import os
 import shutil
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from attendance import register, watch
@@ -20,7 +20,7 @@ class WatchMotionTest(unittest.TestCase):
             register.add_maid(conn, "Sunita", 3000)
 
     def _run(self, states, max_events, maid=None, cooldown_seconds=0, clock=None,
-             faces_model=None, faces_labels=None):
+             faces_model=None, faces_labels=None, keep_days=3):
         states_iter = iter(states)
 
         def fake_get_state(entity_id, ha_url=None, token=None):
@@ -40,7 +40,7 @@ class WatchMotionTest(unittest.TestCase):
                 "binary_sensor.doorcam_smart_motion_human", "camera.doorcam_main",
                 db_path=self.db_path, maid=maid, out_dir=self.out_dir,
                 poll_seconds=0, sleep=lambda s: None, cooldown_seconds=cooldown_seconds,
-                faces_model=faces_model, faces_labels=faces_labels,
+                keep_days=keep_days, faces_model=faces_model, faces_labels=faces_labels,
                 clock=clock or (lambda: datetime(2026, 10, 19, 12, 0, 0)),
             )
             return list(itertools.islice(gen, max_events)), saved
@@ -53,12 +53,16 @@ class WatchMotionTest(unittest.TestCase):
         self.assertEqual(len(saved), 2)
         self.assertTrue(all(os.path.exists(p) for p in saved))
 
-    def test_marks_maid_present_when_given(self):
+    def test_maid_without_a_face_model_does_not_auto_mark_present(self):
+        # C1: anyone at the door (a delivery, a guest) would otherwise mark
+        # the maid present, masking a day she was actually absent. A camera
+        # hit without a face match just saves the snapshot.
         states = ["off", "off", "on"]
-        self._run(states, max_events=1, maid="Sunita")
+        events, saved = self._run(states, max_events=1, maid="Sunita")
+        self.assertEqual(len(saved), 1)
         with open_db(self.db_path) as conn:
             row = register.month_summary(conn, 2026, 10, today=datetime(2026, 10, 19).date())[0]
-        self.assertEqual(row["present_days"], 1)
+        self.assertEqual(row["present_days"], 0)
 
     def test_already_on_at_start_does_not_immediately_snapshot(self):
         # sensor is already "on" when watching begins; that shouldn't itself
@@ -113,6 +117,49 @@ class WatchMotionTest(unittest.TestCase):
         with open_db(self.db_path) as conn:
             row = register.month_summary(conn, 2026, 10, today=datetime(2026, 10, 19).date())[0]
         self.assertEqual(row["present_days"], 0)
+
+
+    def test_a_camera_error_is_logged_and_the_watch_keeps_going(self):
+        # C3: Home Assistant being briefly unreachable shouldn't kill the
+        # whole watch process.
+        states_iter = iter(["off", camera_error(), "off", "on"])
+
+        def fake_get_state(entity_id, ha_url=None, token=None):
+            value = next(states_iter)
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+        logged = []
+        with patch("attendance.camera.get_state", side_effect=fake_get_state), \
+             patch("attendance.camera.save_snapshot", side_effect=lambda *a, **k: open(a[1], "wb").close()):
+            gen = watch.watch_motion(
+                "binary_sensor.doorcam_smart_motion_human", "camera.doorcam_main",
+                db_path=self.db_path, out_dir=self.out_dir, poll_seconds=0,
+                sleep=lambda s: None, cooldown_seconds=0,
+                clock=lambda: datetime(2026, 10, 19, 12, 0, 0), log=logged.append,
+            )
+            events = list(itertools.islice(gen, 1))
+        self.assertEqual(len(events), 1)
+        self.assertTrue(any("could not read" in msg for msg in logged))
+
+    def test_old_snapshots_are_purged_after_a_new_one_is_saved(self):
+        os.makedirs(self.out_dir, exist_ok=True)
+        stale = os.path.join(self.out_dir, "old.jpg")
+        with open(stale, "wb") as f:
+            f.write(b"old")
+        old_time = (datetime(2026, 10, 19) - timedelta(days=10)).timestamp()
+        os.utime(stale, (old_time, old_time))
+
+        states = ["off", "off", "on"]
+        self._run(states, max_events=1, keep_days=3)
+        self.assertFalse(os.path.exists(stale))
+
+
+def camera_error():
+    from attendance.camera import CameraError
+
+    return CameraError("could not reach Home Assistant")
 
 
 if __name__ == "__main__":

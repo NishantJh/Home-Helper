@@ -1,4 +1,5 @@
 import argparse
+import os
 from datetime import date
 
 from . import camera, faces, register, watch, web
@@ -27,6 +28,10 @@ def main(argv=None):
 
     w = sub.add_parser("serve")
     w.add_argument("--port", type=int, default=8080)
+    w.add_argument("--host", default="0.0.0.0")
+    w.add_argument("--password", default=os.environ.get("ATTENDANCE_WEB_PASSWORD"),
+                    help="required unless --host is 127.0.0.1/localhost; "
+                         "also read from ATTENDANCE_WEB_PASSWORD")
 
     c = sub.add_parser("snapshot", help="save a still frame from a Home Assistant camera entity")
     c.add_argument("--entity", default="camera.doorcam_main")
@@ -40,18 +45,19 @@ def main(argv=None):
     v = sub.add_parser("watch", help="save a snapshot whenever a motion sensor reports a person")
     v.add_argument("--motion-entity", default="binary_sensor.doorcam_smart_motion_human")
     v.add_argument("--camera-entity", default="camera.doorcam_main")
-    v.add_argument("--maid", help="single-maid mode: mark this maid present on every motion event "
-                                  "(ignored once --faces-model is given)")
+    v.add_argument("--maid", help="unused without --faces-model: a hit is only marked present "
+                                  "once a trained face match confirms who it is")
     v.add_argument("--out-dir", default="snapshots")
     v.add_argument("--poll-seconds", type=int, default=3)
     v.add_argument("--cooldown-seconds", type=int, default=90)
+    v.add_argument("--keep-days", type=int, default=3, help="delete snapshots older than this")
     v.add_argument("--faces-model", help="trained model from train-faces, enables auto-recognition")
     v.add_argument("--faces-labels", help="labels file from train-faces")
     v.add_argument("--confidence-threshold", type=float, default=70)
 
     args = p.parse_args(argv)
     if args.cmd == "serve":
-        web.serve(args.db, port=args.port)
+        web.serve(args.db, host=args.host, port=args.port, password=args.password)
         return
     if args.cmd == "snapshot":
         path = camera.save_snapshot(args.entity, args.out)
@@ -68,7 +74,7 @@ def main(argv=None):
         for path, recognized in watch.watch_motion(
             args.motion_entity, args.camera_entity, db_path=args.db, maid=args.maid,
             out_dir=args.out_dir, poll_seconds=args.poll_seconds,
-            cooldown_seconds=args.cooldown_seconds,
+            cooldown_seconds=args.cooldown_seconds, keep_days=args.keep_days,
             faces_model=args.faces_model, faces_labels=args.faces_labels,
             confidence_threshold=args.confidence_threshold,
         ):
