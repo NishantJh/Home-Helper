@@ -1,0 +1,6 @@
+# Install on the Pi only. The tests need none of these.
+numpy
+sounddevice
+openwakeword
+faster-whisper
+# system package: sudo apt install espeak-ng libportaudio2
