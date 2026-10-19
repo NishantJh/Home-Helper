@@ -92,3 +92,35 @@ def classify(sender: str, text: str):
     else:
         label = f"{company}" + (f" order {tail}" if tail else "")
     return Otp(company=company, code=code, label=label, item=item)
+
+
+_ITEM_OK = re.compile(r"^[\w &'.,()/+-]{0,40}$", re.UNICODE)
+
+
+def validate(fields: dict):
+    """Pi-side check of what the phone sends: company, item, order_tail, code only.
+
+    No message text is accepted. Default deny: any unknown company, malformed
+    field, or financial word in the item rejects the whole request.
+    """
+    if not isinstance(fields, dict) or set(fields) - {"company", "item", "order_tail", "code"}:
+        return None
+    company = fields.get("company")
+    item = fields.get("item", "") or ""
+    tail = fields.get("order_tail", "") or ""
+    code = fields.get("code")
+    if company not in RULES["companies"]:
+        return None
+    if not (isinstance(code, str) and re.fullmatch(r"\d{4,6}", code)):
+        return None
+    if not (isinstance(item, str) and _ITEM_OK.match(item)):
+        return None
+    if not (isinstance(tail, str) and re.fullmatch(r"[A-Za-z0-9]{0,4}", tail)):
+        return None
+    low = item.lower()
+    if any(_has_word(low, w) for w in RULES["financial_words"]):
+        return None
+    label = company + (f": {item}" if item else "")
+    if tail:
+        label += f" (order …{tail})" if item else f" order …{tail}"
+    return Otp(company=company, code=code, label=label, item=item)

@@ -5,12 +5,13 @@ import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 
-from otp_relay.classify import classify
+from otp_relay.classify import classify, validate
 from otp_relay.notify import forward, format_message, recipients_for
 from otp_relay.server import make_handler
 from otp_relay.store import OtpStore
 from otp_relay.voice import answer, detect_language
 
+AMAZON_FIELDS = {"company": "Amazon", "item": "Philips trimmer", "order_tail": "4321", "code": "5927"}
 AMAZON = ("AX-AMAZON", "Your Amazon order of Philips trimmer, order 408-1234567-7654321 is out for "
           "delivery. Share OTP 5927 with the delivery agent.")
 FLIPKART = ("FLIPKT", "Flipkart: OTP 4410 for delivery of your Boat earphones. Share with the agent.")
@@ -44,6 +45,27 @@ class ClassifyTests(unittest.TestCase):
 
     def test_hindi_financial_word_blocks(self):
         self.assertIsNone(classify("AX-AMAZON", "Amazon ऑर्डर डिलीवरी OTP 5927, भुगतान बाकी"))
+
+
+class ValidateTests(unittest.TestCase):
+    def test_accepts_clean_fields(self):
+        otp = validate({"company": "Amazon", "item": "Philips trimmer", "order_tail": "4321", "code": "5927"})
+        self.assertEqual(otp.label, "Amazon: Philips trimmer (order …4321)")
+        self.assertEqual(validate({"company": "Swiggy", "code": "1234"}).label, "Swiggy")
+
+    def test_rejects_message_text_and_bad_fields(self):
+        ok = {"company": "Amazon", "code": "5927"}
+        self.assertIsNotNone(validate(ok))
+        for bad in [
+            {**ok, "text": "OTP 5927 for UPI"},          # any extra field, incl. message text
+            {**ok, "company": "HDFC Bank"},              # not an approved company
+            {**ok, "code": "59"}, {**ok, "code": "5927a"},
+            {**ok, "item": "x" * 41},                    # too long to be an item name
+            {**ok, "item": "UPI payment"},               # financial word in the label
+            {**ok, "item": "a\nb"}, {**ok, "order_tail": "12345"},
+            "not a dict", None,
+        ]:
+            self.assertIsNone(validate(bad), bad)
 
 
 class StoreAndRoutingTests(unittest.TestCase):
@@ -131,15 +153,16 @@ class ServerTests(unittest.TestCase):
             return e.code, None
 
     def test_auth_required(self):
-        self.assertEqual(self.post("/ingest", {"sender": "x", "text": "y"}, token="bad")[0], 401)
+        self.assertEqual(self.post("/ingest", AMAZON_FIELDS, token="bad")[0], 401)
 
     def test_accept_forward_and_query(self):
-        self.assertEqual(self.post("/ingest", dict(zip(("sender", "text"), AMAZON)))[1], {"status": "accepted"})
+        self.assertEqual(self.post("/ingest", AMAZON_FIELDS)[1], {"status": "accepted"})
         self.assertEqual(self.forwarded, ["5927"])
         self.assertIn("5 9 2 7", self.post("/query", {"transcript": "amazon otp"})[1]["speech"])
 
     def test_bank_otp_rejected_deleted_and_not_forwarded(self):
         sender, text = BLOCKED[0]
+        # Even a bank message sent as text is refused: the Pi accepts no text at all.
         code, body = self.post("/ingest", {"sender": sender, "text": text})
         self.assertEqual(body, {"status": "rejected"})
         self.assertEqual(self.forwarded, [])
@@ -148,7 +171,7 @@ class ServerTests(unittest.TestCase):
         self.assertNotIn("123456", json.dumps(body))
 
     def test_oversized_and_bad_body(self):
-        self.assertEqual(self.post("/ingest", {"text": "x" * 5000})[0], 400)
+        self.assertEqual(self.post("/ingest", {"company": "Amazon", "code": "5927", "item": "x" * 5000})[0], 400)
 
 
 if __name__ == "__main__":

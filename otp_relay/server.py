@@ -1,11 +1,11 @@
 """Ingest server on the Pi. Bind it to the Tailscale/LAN address only.
 
-POST /ingest  {"sender": "...", "text": "..."}  -> {"status": "accepted"|"rejected"}
+POST /ingest  {"company", "item", "order_tail", "code"}  -> {"status": "accepted"|"rejected"}
 POST /query   {"transcript": "..."}             -> {"language": "...", "speech": "..."}
 GET  /health  -> {"ok": true, "rejected": N}
 
-The message text is classified and dropped; only company, label, code and time
-are kept (in memory, 30 minutes). Request bodies are never logged.
+The phone sends only those four fields, never message text. They are validated
+(default deny) and kept in memory for 30 minutes. Request bodies are never logged.
 """
 import hmac
 import json
@@ -13,7 +13,7 @@ import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from .classify import classify
+from .classify import validate
 from .notify import forward
 from .store import OtpStore
 from .voice import answer
@@ -63,7 +63,7 @@ def make_handler(store, token, config, secrets, send=forward):
             if data is None:
                 return self._json(400, {})
             if self.path == "/ingest":
-                otp = classify(str(data.get("sender", "")), str(data.get("text", "")))
+                otp = validate(data)
                 if otp is None:
                     store.reject()
                     return self._json(200, {"status": "rejected"})
