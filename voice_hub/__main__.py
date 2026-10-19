@@ -8,6 +8,7 @@
 """
 import os
 
+from otp_relay.server import require_token
 from otp_relay.voice import detect_language
 
 from . import adapters
@@ -20,7 +21,7 @@ def build_hub():
     if device is not None and device.isdigit():
         device = int(device)
     handlers = [make_otp_handler(os.environ.get("OTP_RELAY_URL", "http://127.0.0.1:8765/query"),
-                                 os.environ.get("OTP_RELAY_TOKEN", ""))]
+                                 require_token(os.environ.get("OTP_RELAY_TOKEN")))]
     # Add other handlers (for example the attendance leave commands) to this list.
     return Hub(
         wait_for_wake=adapters.wake_word_listener(os.environ["WAKEWORD_MODEL"], device=device),

@@ -26,5 +26,10 @@
     "aadhar", "pan ", "netbanking", "net banking", "emi", "rs.", "rs ", "inr", "₹", "usd",
     "बैंक", "खाता", "खाते", "भुगतान", "पेमेंट", "कार्ड", "लेनदेन", "व्यवहार", "पैसे", "रुपये", "रुपए"
   ],
+  "non_delivery_words": [
+    "verify", "verification", "verified", "phone number", "mobile number", "sign up",
+    "signup", "sign-up", "register", "registration", "new account", "confirm your number",
+    "सत्यापित", "सत्यापन", "वेरिफाई", "पंजीकरण", "नोंदणी", "पडताळणी"
+  ],
   "ttl_seconds": 1800
 }

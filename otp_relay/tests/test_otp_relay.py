@@ -11,6 +11,7 @@ from otp_relay.server import make_handler
 from otp_relay.store import OtpStore
 from otp_relay.voice import answer, detect_language
 
+TOKEN = "t" * 20
 AMAZON_FIELDS = {"company": "Amazon", "item": "Philips trimmer", "order_tail": "4321", "code": "5927"}
 AMAZON = ("AX-AMAZON", "Your Amazon order of Philips trimmer, order 408-1234567-7654321 is out for "
           "delivery. Share OTP 5927 with the delivery agent.")
@@ -26,6 +27,9 @@ BLOCKED = [
     ("AX-AMAZON", "Amazon delivery OTP 1234 and also 5678"),         # ambiguous
     ("AX-AMAZON", "Hello, how are you"),                              # not an OTP
     ("SBIINB", "Your bank a/c OTP 9876 for card delivery order"),
+    ("ZOMATO", "Use OTP 4821 to verify your phone number on Zomato and place your order."),
+    ("AX-AMAZON", "Amazon: 4821 is your OTP to register. Welcome, place your first order."),
+    ("AX-AMAZON", "Amazon: OTP 4821 for sign up. Order your first parcel today."),
 ]
 
 
@@ -66,6 +70,11 @@ class ValidateTests(unittest.TestCase):
             "not a dict", None,
         ]:
             self.assertIsNone(validate(bad), bad)
+
+
+    def test_verification_wording_blocked_but_delivery_still_works(self):
+        self.assertIsNone(validate({"company": "Zomato", "item": "verify phone", "code": "4821"}))
+        self.assertIsNotNone(classify("ZOMATO", "Zomato: OTP 4821 for your order. Share with the delivery partner."))
 
 
 class StoreAndRoutingTests(unittest.TestCase):
@@ -133,7 +142,7 @@ class ServerTests(unittest.TestCase):
     def setUp(self):
         self.store = OtpStore()
         self.forwarded = []
-        handler = make_handler(self.store, "secret", {}, {},
+        handler = make_handler(self.store, TOKEN, {}, {},
                                send=lambda e, c, s: self.forwarded.append(e.otp.code))
         self.srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         self.port = self.srv.server_address[1]
@@ -142,7 +151,7 @@ class ServerTests(unittest.TestCase):
     def tearDown(self):
         self.srv.shutdown()
 
-    def post(self, path, obj, token="secret"):
+    def post(self, path, obj, token=TOKEN):
         req = urllib.request.Request(
             f"http://127.0.0.1:{self.port}{path}", data=json.dumps(obj).encode(), method="POST",
             headers={"Authorization": f"Bearer {token}"})
@@ -151,6 +160,21 @@ class ServerTests(unittest.TestCase):
                 return r.status, json.loads(r.read())
         except urllib.error.HTTPError as e:
             return e.code, None
+
+    def test_blank_or_short_token_refused_at_start(self):
+        for bad in ["", "short", None]:
+            with self.assertRaises(SystemExit):
+                make_handler(OtpStore(), bad, {}, {})
+        from otp_relay.server import require_token
+        self.assertEqual(require_token(TOKEN), TOKEN)
+
+    def test_empty_bearer_header_is_unauthorised(self):
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/query", data=b'{"transcript": "otp"}', method="POST",
+            headers={"Authorization": "Bearer "})
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(req)
+        self.assertEqual(ctx.exception.code, 401)
 
     def test_auth_required(self):
         self.assertEqual(self.post("/ingest", AMAZON_FIELDS, token="bad")[0], 401)

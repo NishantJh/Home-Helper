@@ -37,6 +37,11 @@ def _has_word(text: str, word: str) -> bool:
     return word in text
 
 
+def _blocked(low: str) -> bool:
+    """Financial words, and account / sign-up / phone-verification wording."""
+    return any(_has_word(low, w) for w in RULES["financial_words"] + RULES["non_delivery_words"])
+
+
 def _company(sender: str, text: str):
     s = re.sub(r"[^A-Z0-9]", "", sender.upper())
     for name, c in RULES["companies"].items():
@@ -74,7 +79,7 @@ def classify(sender: str, text: str):
     if not text or len(text) > 600:
         return None
     low = text.lower()
-    if any(_has_word(low, w) for w in RULES["financial_words"]):
+    if _blocked(low):
         return None
     if not any(_has_word(low, w) for w in RULES["delivery_words"]):
         return None
@@ -117,8 +122,7 @@ def validate(fields: dict):
         return None
     if not (isinstance(tail, str) and re.fullmatch(r"[A-Za-z0-9]{0,4}", tail)):
         return None
-    low = item.lower()
-    if any(_has_word(low, w) for w in RULES["financial_words"]):
+    if _blocked(item.lower()):
         return None
     label = company + (f": {item}" if item else "")
     if tail:

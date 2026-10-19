@@ -1,9 +1,5 @@
 {
   "bind": "100.x.y.z",
   "port": 8765,
-  "whatsapp": {"phone_number_id": "REPLACE_ME", "template": "delivery_otp"},
-  "recipients": [
-    {"name": "Sunita", "channel": "whatsapp", "address": "91XXXXXXXXXX", "companies": ["*"]},
-    {"name": "Nishant", "channel": "telegram", "address": "123456789", "companies": ["Amazon", "Flipkart"]}
-  ]
+  "recipients": []
 }
