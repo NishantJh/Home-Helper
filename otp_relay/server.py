@@ -19,9 +19,18 @@ from .store import OtpStore
 from .voice import answer
 
 MAX_BODY = 4096
+MIN_TOKEN_LEN = 16
+
+
+def require_token(token):
+    """An empty or short token would let anyone in ("Bearer " matches an empty one)."""
+    if not isinstance(token, str) or len(token) < MIN_TOKEN_LEN:
+        raise SystemExit(f"OTP_RELAY_TOKEN must be set and at least {MIN_TOKEN_LEN} characters long")
+    return token
 
 
 def make_handler(store, token, config, secrets, send=forward):
+    require_token(token)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):  # no access log: it could carry content
             pass
@@ -82,7 +91,7 @@ def main(argv=None):
     config_path = os.environ.get("OTP_RELAY_CONFIG", "otp_relay.config.json")
     with open(config_path, encoding="utf-8") as f:
         config = json.load(f)
-    token = os.environ["OTP_RELAY_TOKEN"]
+    token = require_token(os.environ.get("OTP_RELAY_TOKEN"))
     secrets = {k: os.environ[k] for k in ("TELEGRAM_BOT_TOKEN", "WHATSAPP_TOKEN") if k in os.environ}
     host = config.get("bind", "127.0.0.1")
     port = int(config.get("port", 8765))
