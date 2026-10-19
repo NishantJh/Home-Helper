@@ -1,7 +1,7 @@
 import argparse
 from datetime import date
 
-from . import register, web
+from . import camera, register, web
 from .db import open_db
 
 
@@ -28,9 +28,17 @@ def main(argv=None):
     w = sub.add_parser("serve")
     w.add_argument("--port", type=int, default=8080)
 
+    c = sub.add_parser("snapshot", help="save a still frame from a Home Assistant camera entity")
+    c.add_argument("--entity", default="camera.doorcam_main")
+    c.add_argument("--out", default="snapshot.jpg")
+
     args = p.parse_args(argv)
     if args.cmd == "serve":
         web.serve(args.db, port=args.port)
+        return
+    if args.cmd == "snapshot":
+        path = camera.save_snapshot(args.entity, args.out)
+        print(f"saved {path}")
         return
     with open_db(args.db) as conn:
         if args.cmd == "add-maid":
