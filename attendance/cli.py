@@ -1,7 +1,7 @@
 import argparse
 from datetime import date
 
-from . import camera, register, web
+from . import camera, register, watch, web
 from .db import open_db
 
 
@@ -32,6 +32,13 @@ def main(argv=None):
     c.add_argument("--entity", default="camera.doorcam_main")
     c.add_argument("--out", default="snapshot.jpg")
 
+    v = sub.add_parser("watch", help="save a snapshot whenever a motion sensor reports a person")
+    v.add_argument("--motion-entity", default="binary_sensor.doorcam_smart_motion_human")
+    v.add_argument("--camera-entity", default="camera.doorcam_main")
+    v.add_argument("--maid", help="mark this maid present (source=camera) on every motion event")
+    v.add_argument("--out-dir", default="snapshots")
+    v.add_argument("--poll-seconds", type=int, default=3)
+
     args = p.parse_args(argv)
     if args.cmd == "serve":
         web.serve(args.db, port=args.port)
@@ -39,6 +46,14 @@ def main(argv=None):
     if args.cmd == "snapshot":
         path = camera.save_snapshot(args.entity, args.out)
         print(f"saved {path}")
+        return
+    if args.cmd == "watch":
+        print(f"watching {args.motion_entity}, polling every {args.poll_seconds}s (Ctrl+C to stop)")
+        for path in watch.watch_motion(
+            args.motion_entity, args.camera_entity, db_path=args.db, maid=args.maid,
+            out_dir=args.out_dir, poll_seconds=args.poll_seconds,
+        ):
+            print(f"motion detected, saved {path}")
         return
     with open_db(args.db) as conn:
         if args.cmd == "add-maid":
