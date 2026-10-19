@@ -1,0 +1,30 @@
+{
+  "companies": {
+    "Amazon": {"senders": ["AMAZON", "AMZNIN", "AMZN"], "names": ["amazon"]},
+    "Flipkart": {"senders": ["FLIPKT", "FLPKRT", "FKRT"], "names": ["flipkart"]},
+    "Swiggy": {"senders": ["SWIGGY", "SWIGGI"], "names": ["swiggy"]},
+    "Zomato": {"senders": ["ZOMATO"], "names": ["zomato"]},
+    "Zepto": {"senders": ["ZEPTO"], "names": ["zepto"]},
+    "BigBasket": {"senders": ["BBASKT", "BIGBSK"], "names": ["bigbasket", "big basket"]},
+    "Blinkit": {"senders": ["BLINKIT", "BLNKIT"], "names": ["blinkit"]},
+    "Meesho": {"senders": ["MEESHO"], "names": ["meesho"]},
+    "Myntra": {"senders": ["MYNTRA"], "names": ["myntra"]},
+    "BlueDart": {"senders": ["BLUDRT", "BLUEDT"], "names": ["bluedart", "blue dart"]},
+    "Delhivery": {"senders": ["DELHVY", "DLHVRY"], "names": ["delhivery"]},
+    "India Post": {"senders": ["INDPST"], "names": ["india post", "speed post"]}
+  },
+  "delivery_words": [
+    "delivery", "deliver", "delivered", "order", "package", "parcel", "shipment",
+    "courier", "rider", "delivery partner", "delivery agent", "agent",
+    "डिलीवरी", "ऑर्डर", "पार्सल", "डिलिव्हरी", "ऑर्डर"
+  ],
+  "financial_words": [
+    "bank", "a/c", "acct", "account", "upi", "card", "debit", "credit", "transaction",
+    "txn", "payment", "pay", "paid", "transfer", "neft", "imps", "rtgs", "login", "log in",
+    "sign in", "password", "loan", "insurance", "mutual fund", "demat", "wallet", "paytm",
+    "phonepe", "gpay", "google pay", "bhim", "withdraw", "atm", "cvv", "kyc", "aadhaar",
+    "aadhar", "pan ", "netbanking", "net banking", "emi", "rs.", "rs ", "inr", "₹", "usd",
+    "बैंक", "खाता", "खाते", "भुगतान", "पेमेंट", "कार्ड", "लेनदेन", "व्यवहार", "पैसे", "रुपये", "रुपए"
+  ],
+  "ttl_seconds": 1800
+}
