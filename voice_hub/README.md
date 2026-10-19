@@ -17,14 +17,15 @@ mic -> openWakeWord -> record until silence -> faster-whisper (en/hi/mr, auto la
 ```
 sudo apt install espeak-ng libportaudio2
 pip install -r voice_hub/requirements-voice.txt
-export WAKEWORD_MODEL=/path/to/wakeword.onnx OTP_RELAY_TOKEN=...   # same token as otp_relay
+export OTP_RELAY_TOKEN=...   # same token as otp_relay
+# optional: WAKEWORD_MODEL=hey_mycroft (or a path to your own model file)
 python3 -m otp_relay.server &      # see otp_relay/README.md
 python3 -m voice_hub
 ```
 
 ## To check on the real Pi (not testable from the cloud)
 
-- **Wake word:** openWakeWord ships a few ready-made words; a custom word needs a model trained for it. Pick the word and set `WAKEWORD_MODEL`.
+- **Wake word:** starts as the ready-made "hey jarvis" (downloaded on first run; needs internet once). Others: hey_mycroft, hey_rhasspy, alexa (avoid it: your Echo will answer too). Change it with `WAKEWORD_MODEL` and restart. A custom word needs a model trained for it. If it triggers too easily or misses you, adjust `threshold` in `adapters.wake_word_listener`.
 - **Speed:** Whisper `small` on a Pi 4 may take several seconds per request; set `WHISPER_MODEL=base` if so. Hindi and Marathi are less accurate than English, especially `base`.
 - **Microphone level:** if it cuts off early or never stops, tune `speech_rms` in `adapters.recorder`. Set `AUDIO_IN_DEVICE` if the default input is wrong.
 - **Voice:** espeak-ng speaks English, Hindi and Marathi but sounds robotic. Piper can replace `espeak_speaker` later.

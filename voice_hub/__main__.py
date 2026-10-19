@@ -1,6 +1,6 @@
 """python -m voice_hub  (settings come from environment variables)
 
-  WAKEWORD_MODEL      path to the openWakeWord model file (required)
+  WAKEWORD_MODEL      ready-made word name or path to a model file (default hey_jarvis)
   OTP_RELAY_URL       default http://127.0.0.1:8765/query
   OTP_RELAY_TOKEN     same token the otp_relay server uses
   WHISPER_MODEL       default small
@@ -23,7 +23,7 @@ def build_hub():
                                  os.environ.get("OTP_RELAY_TOKEN", ""))]
     # Add other handlers (for example the attendance leave commands) to this list.
     return Hub(
-        wait_for_wake=adapters.wake_word_listener(os.environ["WAKEWORD_MODEL"], device=device),
+        wait_for_wake=adapters.wake_word_listener(os.environ.get("WAKEWORD_MODEL", "hey_jarvis"), device=device),
         listen=adapters.recorder(device=device),
         transcribe=adapters.whisper_transcriber(os.environ.get("WHISPER_MODEL", "small")),
         speak=adapters.espeak_speaker(),
