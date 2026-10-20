@@ -102,29 +102,39 @@ def classify(sender: str, text: str):
 _ITEM_OK = re.compile(r"^[\w &'.,()/+-]{0,40}$", re.UNICODE)
 
 
-def validate(fields: dict):
+def check(fields: dict):
     """Pi-side check of what the phone sends: company, item, order_tail, code only.
 
-    No message text is accepted. Default deny: any unknown company, malformed
-    field, or financial word in the item rejects the whole request.
+    Returns (Otp, None) when accepted, or (None, reason) where reason is only the
+    name of the field that failed, never any value. No message text is accepted.
+    Default deny: any unknown company, malformed field, or financial word in the
+    item rejects the whole request.
     """
-    if not isinstance(fields, dict) or set(fields) - {"company", "item", "order_tail", "code"}:
-        return None
+    if not isinstance(fields, dict):
+        return None, "body"
+    if set(fields) - {"company", "item", "order_tail", "code"}:
+        return None, "extra_fields"
     company = fields.get("company")
     item = fields.get("item", "") or ""
     tail = fields.get("order_tail", "") or ""
     code = fields.get("code")
-    if company not in RULES["companies"]:
-        return None
+    names = {name.lower(): name for name in RULES["companies"]}
+    company = names.get(company.strip().lower()) if isinstance(company, str) else None
+    if company is None:
+        return None, "company"
     if not (isinstance(code, str) and re.fullmatch(r"\d{4,6}", code)):
-        return None
+        return None, "code"
     if not (isinstance(item, str) and _ITEM_OK.match(item)):
-        return None
+        return None, "item"
     if not (isinstance(tail, str) and re.fullmatch(r"[A-Za-z0-9]{0,4}", tail)):
-        return None
+        return None, "order_tail"
     if _blocked(item.lower()):
-        return None
+        return None, "item_blocked"
     label = company + (f": {item}" if item else "")
     if tail:
         label += f" (order …{tail})" if item else f" order …{tail}"
-    return Otp(company=company, code=code, label=label, item=item)
+    return Otp(company=company, code=code, label=label, item=item), None
+
+
+def validate(fields: dict):
+    return check(fields)[0]

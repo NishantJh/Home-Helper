@@ -188,11 +188,24 @@ class ServerTests(unittest.TestCase):
         sender, text = BLOCKED[0]
         # Even a bank message sent as text is refused: the Pi accepts no text at all.
         code, body = self.post("/ingest", {"sender": sender, "text": text})
-        self.assertEqual(body, {"status": "rejected"})
+        self.assertEqual(body, {"status": "rejected", "reason": "extra_fields"})
         self.assertEqual(self.forwarded, [])
         self.assertEqual(self.store.recent(), [])
         self.assertEqual(self.store.rejected, 1)
         self.assertNotIn("123456", json.dumps(body))
+
+    def test_rejection_names_only_the_failing_field(self):
+        for bad, field in (({"company": "AmazonAmazon", "code": "5927"}, "company"),
+                           ({"company": "Amazon", "code": "5927 "}, "code"),
+                           ({"company": "Amazon", "code": "5927", "item": "x!"}, "item"),
+                           ({"company": "Amazon", "code": "5927", "order_tail": "12345"}, "order_tail")):
+            body = self.post("/ingest", bad)[1]
+            self.assertEqual(body, {"status": "rejected", "reason": field})
+            self.assertNotIn("5927", json.dumps(body))
+
+    def test_blank_item_and_tail_and_lowercase_company_accepted(self):
+        fields = {"company": "amazon", "item": "", "order_tail": "", "code": "482913"}
+        self.assertEqual(self.post("/ingest", fields)[1], {"status": "accepted"})
 
     def test_oversized_and_bad_body(self):
         self.assertEqual(self.post("/ingest", {"company": "Amazon", "code": "5927", "item": "x" * 5000})[0], 400)
