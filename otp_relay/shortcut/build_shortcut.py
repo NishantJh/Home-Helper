@@ -1,6 +1,8 @@
 """Builds the iPhone Shortcut "Delivery OTP" from otp_relay/rules.json.
 
-    python3 -m otp_relay.shortcut.build_shortcut [output.shortcut]
+    python3 -m otp_relay.shortcut.build_shortcut [output.shortcut] [--no-questions]
+
+--no-questions leaves out the import questions; edit the two text cards by hand.
 
 The file is UNSIGNED. iOS only installs signed shortcuts, so sign it on a Mac:
 
@@ -89,7 +91,7 @@ def _dict_field(pairs):
         "WFSerializationType": "WFDictionaryFieldValue"}
 
 
-def build():
+def build(ask=True):
     pat = patterns()
     actions, questions = [], []
 
@@ -106,7 +108,7 @@ def build():
     i = add(_action("gettext", WFTextActionText=_string("PASTE-OTP_RELAY_TOKEN-HERE")))
     questions.append({"Category": "Parameter", "ParameterKey": "WFTextActionText", "ActionIndex": i,
                       "Text": "OTP_RELAY_TOKEN (the secret you set on the Pi)",
-                      "DefaultValue": ""})
+                      "DefaultValue": "PASTE-OTP_RELAY_TOKEN-HERE"})
     add(_action("setvariable", WFVariableName="Token", WFInput=_out_of(actions, i)))
 
     # the message text, as the shortcut's input
@@ -149,7 +151,7 @@ def build():
         "WFWorkflowMinimumClientVersion": 900,
         "WFWorkflowMinimumClientVersionString": "900",
         "WFWorkflowIcon": {"WFWorkflowIconStartColor": 4282601983, "WFWorkflowIconGlyphNumber": 59511},
-        "WFWorkflowImportQuestions": questions,
+        "WFWorkflowImportQuestions": questions if ask else [],
         "WFWorkflowInputContentItemClasses": ["WFStringContentItem"],
         "WFWorkflowTypes": ["ActionExtension"],
         "WFWorkflowHasShortcutInputVariables": True,
@@ -164,9 +166,10 @@ def _out_of(actions, index):
 
 
 def main(argv):
-    path = argv[1] if len(argv) > 1 else "Delivery OTP (unsigned).shortcut"
+    args = [a for a in argv[1:] if a != "--no-questions"]
+    path = args[0] if args else "Delivery OTP (unsigned).shortcut"
     with open(path, "wb") as f:
-        plistlib.dump(build(), f, fmt=plistlib.FMT_BINARY)
+        plistlib.dump(build(ask="--no-questions" not in argv), f, fmt=plistlib.FMT_BINARY)
     print(f"wrote {path} (unsigned: sign it on a Mac, see the README)")
 
 
