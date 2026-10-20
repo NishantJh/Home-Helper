@@ -1,6 +1,6 @@
 """Ingest server on the Pi. Bind it to the Tailscale/LAN address only.
 
-POST /ingest  {"company", "item", "order_tail", "code"}  -> {"status": "accepted"|"rejected"}
+POST /ingest  {"company", "item", "order_tail", "code"}  -> {"status": "accepted"|"rejected", "reason": field name}
 POST /query   {"transcript": "..."}             -> {"language": "...", "speech": "..."}
 GET  /health  -> {"ok": true, "rejected": N}
 
@@ -13,7 +13,7 @@ import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from .classify import validate
+from .classify import check
 from .notify import forward
 from .store import OtpStore
 from .voice import answer
@@ -29,7 +29,7 @@ def require_token(token):
     return token
 
 
-def make_handler(store, token, config, secrets, send=forward):
+def make_handler(store, token, config, secrets, send=forward, debug=False):
     require_token(token)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):  # no access log: it could carry content
@@ -72,10 +72,13 @@ def make_handler(store, token, config, secrets, send=forward):
             if data is None:
                 return self._json(400, {})
             if self.path == "/ingest":
-                otp = validate(data)
+                otp, reason = check(data)
                 if otp is None:
                     store.reject()
-                    return self._json(200, {"status": "rejected"})
+                    if debug:  # field names and types only, never values
+                        shape = {k: type(v).__name__ for k, v in data.items()}
+                        print(f"otp_relay rejected: {reason} fields={shape}", file=sys.stderr, flush=True)
+                    return self._json(200, {"status": "rejected", "reason": reason})
                 entry = store.add(otp)
                 send(entry, config, secrets)
                 return self._json(200, {"status": "accepted"})
@@ -95,7 +98,8 @@ def main(argv=None):
     secrets = {k: os.environ[k] for k in ("TELEGRAM_BOT_TOKEN", "WHATSAPP_TOKEN") if k in os.environ}
     host = config.get("bind", "127.0.0.1")
     port = int(config.get("port", 8765))
-    server = ThreadingHTTPServer((host, port), make_handler(OtpStore(), token, config, secrets))
+    server = ThreadingHTTPServer((host, port), make_handler(OtpStore(), token, config, secrets,
+                                                           debug=os.environ.get("OTP_RELAY_DEBUG") == "1"))
     print(f"otp_relay listening on {host}:{port}", file=sys.stderr)
     server.serve_forever()
 
