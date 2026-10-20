@@ -114,7 +114,9 @@ def validate(fields: dict):
     item = fields.get("item", "") or ""
     tail = fields.get("order_tail", "") or ""
     code = fields.get("code")
-    if company not in RULES["companies"]:
+    names = {name.lower(): name for name in RULES["companies"]}
+    company = names.get(company.lower()) if isinstance(company, str) else None
+    if company is None:
         return None
     if not (isinstance(code, str) and re.fullmatch(r"\d{4,6}", code)):
         return None
