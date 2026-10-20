@@ -1,3 +1,4 @@
+import os
 import plistlib
 import re
 import tempfile
@@ -68,9 +69,10 @@ class FileStructureTests(unittest.TestCase):
         self.actions = self.d["WFWorkflowActions"]
 
     def test_round_trips_as_binary_plist(self):
-        with tempfile.NamedTemporaryFile(suffix=".shortcut") as f:
-            bs.main(["x", f.name])
-            with open(f.name, "rb") as fh:
+        with tempfile.TemporaryDirectory() as d:  # not NamedTemporaryFile: Windows can't reopen it
+            path = os.path.join(d, "x.shortcut")
+            bs.main(["x", path])
+            with open(path, "rb") as fh:
                 loaded = plistlib.load(fh)
         self.assertEqual([a["WFWorkflowActionIdentifier"] for a in loaded["WFWorkflowActions"]],
                          [a["WFWorkflowActionIdentifier"] for a in self.actions])
