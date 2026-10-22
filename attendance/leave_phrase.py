@@ -20,7 +20,8 @@ LEAVE_WORDS = {
 _LEAVE_PREFIXES = ("छुट्टी", "रजे", "सुट्टी")
 
 DAY_UNITS = {"day", "days", "दिन", "दिनों", "दिवस", "दिवसांसाठी"}
-RANGE_END = {"till", "until", "to", "तक", "पर्यंत", "पर्यंत्", "ते"}
+RANGE_END = {"till", "until", "तक", "पर्यंत", "पर्यंत्"}
+RANGE_TO = {"to", "ते"}  # a range end only right before the date: "to Friday", not "wants to take"
 RANGE_START = {"from", "से", "पासून", "पासुन"}
 AND_WORDS = {"and", "और", "आणि", "तथा"}
 
@@ -85,8 +86,23 @@ def normalize(text):
     return text.translate(_DEVANAGARI_DIGITS).lower()
 
 
+_GLUED_SUFFIXES = ("पासून", "पासुन", "पर्यंत", "से", "तक")
+PAST_WORDS = {"was", "were", "had", "थी", "थे", "था", "थीं", "होती", "होता", "होते", "होत",
+              "गई", "गयी", "गए", "गयीं"}
+
+
+def _split_glued(token):
+    """'उद्यापासून' -> ['उद्या', 'पासून'], 'कलसे' -> ['कल', 'से']."""
+    for suffix in _GLUED_SUFFIXES:
+        base = token[:-len(suffix)]
+        if token.endswith(suffix) and (base in _RELATIVE or base in WEEKDAY_BY_WORD):
+            return [base, suffix]
+    return [token]
+
+
 def tokenize(text):
-    return [t for t in re.split(r"[\s,.;:!?\"'()\-/]+", normalize(text)) if t]
+    raw = [t for t in re.split(r"[\s,.;:!?\"'()\-/]+", normalize(text)) if t]
+    return [part for t in raw for part in _split_glued(t)]
 
 
 def is_leave_request(text):
@@ -96,15 +112,29 @@ def is_leave_request(text):
     return False
 
 
+def _contains(tokens, needle):
+    n = len(needle)
+    return n > 0 and any(tokens[i:i + n] == needle for i in range(len(tokens) - n + 1))
+
+
 def find_maid(text, names, aliases=None):
-    """Return the one maid named in the text, or None (also None when two are named)."""
-    low = normalize(text)
-    found = set()
+    """Return the one maid named in the text, or None (also None when two are named).
+
+    Whole words only, and a longer name wins over a shorter one it contains
+    ("Ashalata" is not also "Asha").
+    """
+    tokens = tokenize(text)
+    hits = {}  # name -> longest matching spelling, in tokens
     for name in names:
-        candidates = [name] + list((aliases or {}).get(name, []))
-        if any(normalize(c) in low for c in candidates if c):
-            found.add(name)
-    return found.pop() if len(found) == 1 else None
+        for spelling in [name] + list((aliases or {}).get(name, [])):
+            needle = tokenize(spelling) if spelling else []
+            if _contains(tokens, needle) and len(needle) > len(hits.get(name, [])):
+                hits[name] = needle
+    for name, needle in list(hits.items()):
+        if any(other != name and len(o) > len(needle) and _contains(o, needle)
+               for other, o in hits.items()):
+            del hits[name]
+    return next(iter(hits)) if len(hits) == 1 else None
 
 
 def _safe_date(year, month, day):
@@ -114,19 +144,22 @@ def _safe_date(year, month, day):
         return None
 
 
-def _resolve_day(day, month, today):
-    """A day (and maybe month) with no year: pick the nearest sensible occurrence."""
-    year = today.year
-    if month is None:
-        d = _safe_date(year, today.month, day)
-        if d is None or d < today - timedelta(days=7):
-            nm, ny = (today.month % 12) + 1, today.year + (today.month == 12)
-            d = _safe_date(ny, nm, day)
+def _resolve_day(day, month, today, past=False):
+    """A day (and maybe month) with no year.
+
+    With a month: the nearest occurrence, so a date a few days back stays this year.
+    Without one: this month if it is still ahead (or the sentence is past tense and it is
+    within MAX_PAST_DAYS), otherwise next month.
+    """
+    if month is not None:
+        options = [d for d in (_safe_date(today.year + k, month, day) for k in (-1, 0, 1)) if d]
+        return min(options, key=lambda d: abs((d - today).days), default=None)
+    d = _safe_date(today.year, today.month, day)
+    if d is not None and (d >= today - timedelta(days=7)
+                          or (past and d >= today - timedelta(days=MAX_PAST_DAYS))):
         return d
-    d = _safe_date(year, month, day)
-    if d is not None and d < today - timedelta(days=7):
-        d = _safe_date(year + 1, month, day)
-    return d
+    nm, ny = (today.month % 12) + 1, today.year + (today.month == 12)
+    return _safe_date(ny, nm, day)
 
 
 def _next_weekday(weekday, today):
@@ -134,6 +167,7 @@ def _next_weekday(weekday, today):
 
 
 def _mentions(tokens, today):
+    past = any(t in PAST_WORDS for t in tokens)
     """Dates and a duration, in the order spoken: [(index, date)], duration."""
     dates, duration = [], None
     i = 0
@@ -153,20 +187,21 @@ def _mentions(tokens, today):
                 if month is None and nxt == "of" and i + 2 < len(tokens):
                     month = MONTH_BY_WORD.get(tokens[i + 2])
                     skip = 3 if month else 1
-                d = _resolve_day(n, month, today)
+                d = _resolve_day(n, month, today, past)
                 if d:
                     dates.append((i, d))
                 i += skip
                 continue
         elif t in MONTH_BY_WORD and i + 1 < len(tokens) and _ORDINAL.match(tokens[i + 1]):
             n = int(_ORDINAL.match(tokens[i + 1]).group(1))  # "October 25"
-            d = _resolve_day(n, MONTH_BY_WORD[t], today) if 1 <= n <= 31 else None
+            d = _resolve_day(n, MONTH_BY_WORD[t], today, past) if 1 <= n <= 31 else None
             if d:
                 dates.append((i, d))
             i += 2
             continue
         elif t in _RELATIVE:
-            dates.append((i, today + timedelta(days=_RELATIVE[t])))
+            offset = -1 if (t == "कल" and past) else _RELATIVE[t]
+            dates.append((i, today + timedelta(days=offset)))
         elif t in WEEKDAY_BY_WORD:
             dates.append((i, _next_weekday(WEEKDAY_BY_WORD[t], today)))
         i += 1
@@ -185,13 +220,14 @@ def parse_dates(text, today):
         return None, None, None, "no_date"
     if len(dates) == 1:
         d = dates[0][1]
-        if any(t in RANGE_END for t in tokens) and d > today and not any(
-                t in RANGE_START for t in tokens):
+        idx = dates[0][0]
+        till = any(t in RANGE_END for t in tokens) or (idx > 0 and tokens[idx - 1] in RANGE_TO)
+        if till and d > today and not any(t in RANGE_START for t in tokens):
             return _check(today, d, None, today)  # "till Friday"
         return _check(d, d, None, today)
     first, second = dates[0], dates[1]
     between = tokens[first[0]:second[0]]
-    if any(t in AND_WORDS for t in between) and not any(t in RANGE_END for t in between):
+    if any(t in AND_WORDS for t in between) and not any(t in RANGE_END or t in RANGE_TO for t in between):
         days = sorted({d for _, d in dates})
         return _check(days[0], days[-1], days, today)
     start, end = sorted((first[1], second[1]))

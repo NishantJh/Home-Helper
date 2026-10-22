@@ -66,15 +66,22 @@ def detect_language(text):
     return _detect(text)
 
 
-def _fmt(d, lang):
-    return f"{d.day} {lp.MONTH_NAMES[lang][d.month]}"
+def _fmt(d, lang, today):
+    year = f" {d.year}" if d.year != today.year else ""
+    return f"{d.day} {lp.MONTH_NAMES[lang][d.month]}{year}"
+
+
+_NEGATIVE = NO | {"not", "never", "incorrect", "galat", "mat", "nako", "nahin", "wait", "hold",
+                  "stop", "isnt", "dont", "wasnt", "didnt", "cant", "wont", "मत", "रुको", "थांबा"}
+MAX_ANSWER_WORDS = 4
 
 
 def _answer(text):
-    tokens = set(lp.tokenize(text))
-    if tokens & NO:
+    """True for a short, clear yes; False for anything negative; None when unclear."""
+    tokens = lp.tokenize(text.replace("'", "").replace("\u2019", ""))
+    if set(tokens) & _NEGATIVE:
         return False
-    if tokens & YES:
+    if len(tokens) <= MAX_ANSWER_WORDS and set(tokens) & YES:
         return True
     return None
 
@@ -92,9 +99,13 @@ def make_leave_handler(db_path="attendance.db", aliases=None, today=date.today):
     aliases = aliases if aliases is not None else load_aliases()
 
     def handler(text):
+        now = today()
         with open_db(db_path) as conn:
             names = [m["name"] for m in register.list_maids(conn)]
-        intent = lp.parse_leave(text, names, today(), aliases)
+            known = {n: list(a) for n, a in register.list_aliases(conn).items()}
+        for n, a in aliases.items():
+            known.setdefault(n, []).extend(a)
+        intent = lp.parse_leave(text, names, now, known)
         if intent is None:
             return None
         lang = detect_language(text)
@@ -109,12 +120,12 @@ def make_leave_handler(db_path="attendance.db", aliases=None, today=date.today):
         days = intent.days or [intent.start + timedelta(n)
                                for n in range((intent.end - intent.start).days + 1)]
         if len(days) == 1:
-            ask = t["one"].format(name=intent.maid, a=_fmt(days[0], lang))
+            ask = t["one"].format(name=intent.maid, a=_fmt(days[0], lang, now))
         elif intent.days:
-            ask = t["days"].format(name=intent.maid, list=", ".join(_fmt(d, lang) for d in days))
+            ask = t["days"].format(name=intent.maid, list=", ".join(_fmt(d, lang, now) for d in days))
         else:
-            ask = t["many"].format(name=intent.maid, a=_fmt(days[0], lang),
-                                   b=_fmt(days[-1], lang), n=len(days))
+            ask = t["many"].format(name=intent.maid, a=_fmt(days[0], lang, now),
+                                   b=_fmt(days[-1], lang, now), n=len(days))
 
         def confirm(answer_text):
             verdict = _answer(answer_text)
@@ -125,9 +136,9 @@ def make_leave_handler(db_path="attendance.db", aliases=None, today=date.today):
             with open_db(db_path) as conn:
                 for d in days:
                     register.mark(conn, intent.maid, d, "leave", source="voice")
-                row = _month_row(conn, intent.maid, days[0], today())
+                row = _month_row(conn, intent.maid, days[0], now)
             return Reply(t["done"].format(
-                name=intent.maid, used=row["leave_days"], paid=row["paid_leaves_allowed"],
+                name=intent.maid, used=row["paid_leave_days"], paid=row["paid_leaves_allowed"],
                 unpaid=row["unpaid_leave_days"], month=lp.MONTH_NAMES[lang][days[0].month]), lang)
 
         return Reply(ask, lang, then=confirm)

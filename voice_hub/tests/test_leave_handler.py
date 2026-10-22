@@ -5,7 +5,7 @@ from datetime import date
 
 from attendance import register
 from attendance.db import open_db
-from voice_hub.leave_handler import make_leave_handler
+from voice_hub.leave_handler import _answer, make_leave_handler
 from voice_hub.pipeline import Hub
 
 TODAY = date(2026, 10, 22)
@@ -37,7 +37,7 @@ class LeaveTests(unittest.TestCase):
         reply = self.handler("Sunita is on leave from 25 October to 27 October")
         done = reply.then("yes")
         self.assertEqual(self.days(), ["2026-10-25", "2026-10-26", "2026-10-27"])
-        self.assertIn("used 3 of 2 paid leaves", done.speech)
+        self.assertIn("used 2 of 2 paid leaves", done.speech)
         self.assertIn("1 unpaid", done.speech)
 
     def test_no_and_unclear_log_nothing(self):
@@ -81,3 +81,47 @@ class LeaveTests(unittest.TestCase):
         self.assertEqual(len(wakes), 1)
         self.assertEqual(len(spoken), 2)
         self.assertEqual(self.days(), ["2026-10-23"])
+
+
+class AnswerTests(unittest.TestCase):
+    def test_negated_or_hesitant_is_never_yes(self):  # H1
+        for text in ["not right", "that's not correct", "ok wait", "incorrect", "galat",
+                     "nako", "no no that's right", "wait, yes", "hold on okay"]:
+            self.assertIs(_answer(text), False, text)
+
+    def test_clear_short_yes(self):
+        for text in ["yes", "Yes, that's right", "haan", "हाँ", "होय", "ok"]:
+            self.assertIs(_answer(text), True, text)
+
+    def test_long_rambling_reply_is_unclear(self):
+        self.assertIsNone(_answer("well yes I suppose it could be something like that"))
+
+
+class YearAndAliasTests(LeaveTests):
+    def test_readback_names_a_year_that_is_not_this_one(self):
+        reply = self.handler("Sunita on leave on 5 January")
+        self.assertIn("5 January 2027", reply.speech)
+
+    def test_past_date_this_year_logs_this_year(self):  # H2
+        self.handler("Sunita was on leave on 14 October").then("yes")
+        self.assertEqual(self.days(), ["2026-10-14"])
+
+    def test_negative_reply_logs_nothing(self):  # H1 end to end
+        reply = self.handler("Sunita on leave tomorrow")
+        reply.then("not right")
+        reply.then("ok wait")
+        self.assertEqual(self.days(), [])
+
+    def test_alias_stored_in_register(self):  # M5
+        with open_db(self.db) as c:
+            register.add_alias(c, "Sunita", "सुनीता")
+        h = make_leave_handler(self.db, aliases={}, today=lambda: TODAY)
+        h("सुनीता की छुट्टी कल").then("हाँ")
+        self.assertEqual(self.days(), ["2026-10-23"])
+
+    def test_summary_lists_voice_days_for_review(self):  # M6
+        self.handler("Sunita on leave tomorrow").then("yes")
+        with open_db(self.db) as c:
+            rows = register.month_summary(c, 2026, 10, TODAY)
+            self.assertEqual(rows[0]["voice_leave_days"], ["2026-10-23"])
+            self.assertIn("Logged by voice", register.format_summary(rows, 2026, 10))
