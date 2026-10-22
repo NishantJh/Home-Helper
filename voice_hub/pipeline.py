@@ -7,6 +7,9 @@ from typing import Callable, List, Optional
 class Reply:
     speech: str
     language: str = "en"
+    # Optional follow-up: the hub listens again without the wake word and passes the
+    # transcript here (used for "did I get that right?" confirmations).
+    then: Optional["Handler"] = None
 
 
 # A handler returns a Reply when the transcript is for it, otherwise None.
@@ -44,11 +47,24 @@ class Hub:
             except Exception:
                 reply = None  # a broken handler must not take the hub down
             if reply is not None:
-                self.speak(reply.speech, reply.language)
+                self._deliver(reply)
                 return text
         lang = self.detect_language(text)
         self.speak(_UNKNOWN.get(lang, _UNKNOWN["en"]), lang)
         return text
+
+    def _deliver(self, reply):
+        """Speak a reply; while it asks a follow-up, listen once more and answer it."""
+        while reply is not None:
+            self.speak(reply.speech, reply.language)
+            if reply.then is None:
+                return
+            audio = self.listen()
+            text = self.transcribe(audio).strip() if audio is not None else ""
+            try:
+                reply = reply.then(text)
+            except Exception:
+                reply = None
 
     def run_forever(self):
         while True:
