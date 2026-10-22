@@ -27,6 +27,19 @@ def list_maids(conn, active_only=True):
     return conn.execute(sql).fetchall()
 
 
+def add_alias(conn, name, alias):
+    conn.execute("INSERT OR IGNORE INTO maid_alias (maid_id, alias) VALUES (?, ?)",
+                 (_maid_id(conn, name), alias.strip()))
+
+
+def list_aliases(conn):
+    """{maid name: [alias, ...]}"""
+    out = {}
+    for r in conn.execute("SELECT m.name, a.alias FROM maid_alias a JOIN maid m ON m.id = a.maid_id"):
+        out.setdefault(r["name"], []).append(r["alias"])
+    return out
+
+
 def _maid_id(conn, name):
     row = conn.execute("SELECT id FROM maid WHERE name = ?", (name,)).fetchone()
     if row is None:
@@ -79,6 +92,9 @@ def month_summary(conn, year, month, today=None):
         recorded = {e["day"]: e["status"] for e in entries}
         leave_days = sum(1 for s in recorded.values() if s == "leave")
         present_days = sum(1 for s in recorded.values() if s == "present")
+        voice_days = sorted(e["day"] for e in conn.execute(
+            "SELECT day FROM attendance WHERE maid_id = ? AND day LIKE ? "
+            "AND status = 'leave' AND source = 'voice'", (maid["id"], prefix + "%")))
         unconfirmed = [d for d in range(1, counted_days + 1) if f"{prefix}{d:02d}" not in recorded]
         paid = min(leave_days, maid["paid_leaves_per_month"])
         unpaid = leave_days - paid
@@ -90,6 +106,7 @@ def month_summary(conn, year, month, today=None):
             "paid_leaves_allowed": maid["paid_leaves_per_month"],
             "paid_leave_days": paid,
             "unpaid_leave_days": unpaid,
+            "voice_leave_days": voice_days,
             "unconfirmed_days": [f"{prefix}{d:02d}" for d in unconfirmed],
             "monthly_salary": maid["monthly_salary"],
             "deduction": deduction,
@@ -106,6 +123,8 @@ def format_summary(rows, year, month):
             f"({r['paid_leave_days']} paid of {r['paid_leaves_allowed']}, {r['unpaid_leave_days']} unpaid), "
             f"{r['present_days']} present. Deduction {r['deduction']:.2f}, net {r['net_salary']:.2f}."
         )
+        if r["voice_leave_days"]:
+            lines.append("  Logged by voice, please check: " + ", ".join(r["voice_leave_days"]))
         if r["unconfirmed_days"]:
             lines.append(f"  {len(r['unconfirmed_days'])} day(s) with no record, please confirm.")
     return "\n".join(lines)
