@@ -56,14 +56,20 @@ _T = {
 }
 
 
-_MR_WORDS = {"ते", "पर्यंत", "पासून", "उद्या", "परवा", "काल", "आहे", "आणि", "होय", "नको", "नाही"}
+_MR_WORDS = {"ते", "पर्यंत", "पासून", "उद्या", "परवा", "काल", "आहे", "आहेत", "आणि", "होय", "नको",
+             "नाही", "ची", "चा", "चे", "रोजी", "दिवस", "बरोबर", "सांगा"}
+_HI_WORDS = {"से", "तक", "कल", "परसों", "है", "हैं", "की", "का", "के", "दिन", "और", "हाँ", "हां",
+             "नहीं", "सही", "पर", "को", "थी", "था"}
 
 
 def detect_language(text):
+    """en / hi / mr from the script and common function words; Devanagari ties go to Hindi."""
     tokens = lp.tokenize(text)
-    if any(t in _MR_WORDS or t.startswith(("रजे", "रजा", "सुट्टी")) for t in tokens):
-        return "mr"
-    return _detect(text)
+    if not any("\u0900" <= ch <= "\u097f" for ch in text):
+        return _detect(text)  # romanized Hindi/Marathi is recognised by its keywords
+    mr = sum(t in _MR_WORDS or t.startswith(("रजे", "रजा", "सुट्टी")) for t in tokens)
+    hi = sum(t in _HI_WORDS or t.startswith("छुट्टी") for t in tokens)
+    return "mr" if mr > hi else "hi"
 
 
 def _fmt(d, lang, today):

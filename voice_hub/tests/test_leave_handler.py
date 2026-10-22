@@ -125,3 +125,15 @@ class YearAndAliasTests(LeaveTests):
             rows = register.month_summary(c, 2026, 10, TODAY)
             self.assertEqual(rows[0]["voice_leave_days"], ["2026-10-23"])
             self.assertIn("Logged by voice", register.format_summary(rows, 2026, 10))
+
+
+class ReadbackLanguageTests(LeaveTests):
+    def test_readback_and_confirmation_follow_the_spoken_language(self):
+        cases = [("Sunita on leave tomorrow", "en", "Is that right?"),
+                 ("Sunita की छुट्टी कल से परसों तक", "hi", "सही है?"),
+                 ("Sunita उद्या सुट्टीवर आहे", "mr", "बरोबर आहे का?")]
+        for text, lang, marker in cases:
+            reply = self.handler(text)
+            self.assertEqual(reply.language, lang, text)
+            self.assertIn(marker, reply.speech, text)
+            self.assertEqual(reply.then("no").language, lang, text)
