@@ -1,0 +1,5 @@
+{
+  "bind": "100.x.y.z",
+  "port": 8765,
+  "recipients": []
+}
