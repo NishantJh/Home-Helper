@@ -3,6 +3,7 @@
   WAKEWORD_MODEL      path to the openWakeWord model file (required)
   OTP_RELAY_URL       default http://127.0.0.1:8765/query
   OTP_RELAY_TOKEN     same token the otp_relay server uses
+  STT_ENGINE          whisper (default) or sherpa, see voice_hub/stt.py
   WHISPER_MODEL       default small
   ATTENDANCE_DB       attendance register database, default attendance.db
   ATTENDANCE_ALIASES  optional JSON {"Sunita": ["सुनीता"]}: other spellings of a maid's name
@@ -13,7 +14,7 @@ import os
 from otp_relay.server import require_token
 from otp_relay.voice import detect_language
 
-from . import adapters
+from . import adapters, stt
 from .leave_handler import make_leave_handler
 from .otp_handler import make_otp_handler
 from .pipeline import Hub
@@ -29,7 +30,7 @@ def build_hub():
     return Hub(
         wait_for_wake=adapters.wake_word_listener(os.environ["WAKEWORD_MODEL"], device=device),
         listen=adapters.recorder(device=device),
-        transcribe=adapters.whisper_transcriber(os.environ.get("WHISPER_MODEL", "small")),
+        transcribe=stt.make_transcriber(),
         speak=adapters.espeak_speaker(),
         handlers=handlers,
         detect_language=detect_language,

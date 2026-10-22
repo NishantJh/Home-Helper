@@ -3,4 +3,5 @@ numpy
 sounddevice
 openwakeword
 faster-whisper
+sherpa-onnx   # only for STT_ENGINE=sherpa
 # system package: sudo apt install espeak-ng libportaudio2
