@@ -1,0 +1,6 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /voice_hub
+    schedule:
+      interval: daily
