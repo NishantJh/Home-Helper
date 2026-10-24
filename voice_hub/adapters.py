@@ -5,12 +5,20 @@ import subprocess
 RATE = 16000
 
 
-def wake_word_listener(model_path, threshold=0.5, device=None):
-    """Blocks until openWakeWord hears the wake word. `model_path` is the
-    .onnx/.tflite model for your chosen wake word."""
+def wake_word_listener(model, threshold=0.5, device=None):
+    """Blocks until openWakeWord hears the wake word. `model` is either the path
+    to a .onnx/.tflite file or the name of a ready-made word (alexa, hey_jarvis,
+    hey_mycroft, hey_rhasspy), which is downloaded on first use."""
+    import os
+
     import numpy as np
     import sounddevice as sd
     from openwakeword.model import Model
+    from openwakeword.utils import download_models
+
+    if not os.path.exists(model):
+        download_models([model])
+    model_path = model
 
     model = Model(wakeword_models=[model_path])
     frame = 1280  # 80 ms at 16 kHz, the size openWakeWord expects
